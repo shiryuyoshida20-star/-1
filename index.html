@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>図書館スリップ - 貸出・予約トラッカー</title>
+<style>
+  :root{
+    --paper:#F6F1E4;
+    --paper-2:#EFE8D6;
+    --ink:#2B2E26;
+    --ink-soft:#5C5A4D;
+    --line:#D9D0B8;
+    --stamp:#B23A2E;
+    --stamp-bg:#F6E2DD;
+    --ok:#3F6B45;
+    --ok-bg:#E3EBDD;
+    --warn:#A3690F;
+    --warn-bg:#F5E6C8;
+    --danger:#B23A2E;
+    --danger-bg:#F6DCD8;
+    --takushoku:#2C4A66;
+    --shibuya-lend:#6B4A2C;
+    --shibuya-res:#5A3B66;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:80px;
+  }
+  .wrap{max-width:520px;margin:0 auto;padding:20px 16px 0;}
+  header{padding:8px 0 18px;border-bottom:2px dashed var(--line);margin-bottom:18px;}
+  header h1{
+    font-size:20px;font-weight:700;margin:0 0 4px;letter-spacing:.02em;
+  }
+  header p{margin:0;font-size:13px;color:var(--ink-soft);}
+
+  .filters{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;}
+  .filter-chip{
+    font-size:12px;padding:6px 11px;border-radius:999px;
+    border:1px solid var(--line);background:var(--paper-2);color:var(--ink-soft);
+    cursor:pointer;white-space:nowrap;
+  }
+  .filter-chip.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+
+  .empty{
+    text-align:center;padding:48px 20px;color:var(--ink-soft);font-size:14px;
+    border:2px dashed var(--line);border-radius:10px;
+  }
+
+  .slip{
+    position:relative;
+    background:var(--paper-2);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:14px 14px 14px 16px;
+    margin-bottom:12px;
+    display:flex;
+    gap:12px;
+    align-items:flex-start;
+  }
+  .slip::before{
+    content:"";
+    position:absolute;left:0;top:8px;bottom:8px;width:4px;border-radius:2px;
+  }
+  .slip.src-takushoku::before{background:var(--takushoku);}
+  .slip.src-shibuya-lend::before{background:var(--shibuya-lend);}
+  .slip.src-shibuya-res::before{background:var(--shibuya-res);}
+
+  .stamp{
+    flex:none;
+    width:52px;height:52px;border-radius:50%;
+    border:2px solid currentColor;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-family:"Courier New",monospace;
+    transform:rotate(-6deg);
+    line-height:1;
+  }
+  .stamp .num{font-size:18px;font-weight:700;}
+  .stamp .lab{font-size:8px;letter-spacing:.03em;}
+  .stamp.ok{color:var(--ok);background:var(--ok-bg);}
+  .stamp.warn{color:var(--warn);background:var(--warn-bg);}
+  .stamp.danger{color:var(--danger);background:var(--danger-bg);}
+  .stamp.over{color:var(--paper);background:var(--danger);border-color:var(--danger);}
+
+  .slip-body{flex:1;min-width:0;}
+  .slip-src{font-size:11px;color:var(--ink-soft);margin-bottom:2px;}
+  .slip-title{font-size:15px;font-weight:700;margin:0 0 4px;word-break:break-word;}
+  .slip-type{font-size:12px;color:var(--ink-soft);margin-bottom:2px;}
+  .slip-date{
+    font-family:"Courier New",monospace;font-size:13px;font-weight:700;
+    letter-spacing:.02em;
+  }
+
+  .slip-actions{flex:none;display:flex;flex-direction:column;gap:6px;}
+  .icon-btn{
+    width:30px;height:30px;border-radius:6px;border:1px solid var(--line);
+    background:var(--paper);color:var(--ink-soft);font-size:14px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .icon-btn:active{transform:scale(.95);}
+
+  .fab{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:var(--paper);border:none;
+    padding:13px 26px;border-radius:999px;font-size:14px;font-weight:700;
+    box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer;
+    display:flex;align-items:center;gap:6px;
+  }
+  .fab:active{transform:translateX(-50%) scale(.97);}
+
+  .overlay{
+    position:fixed;inset:0;background:rgba(43,46,38,.55);
+    display:flex;align-items:flex-end;justify-content:center;z-index:50;
+  }
+  .overlay.hidden{display:none;}
+  .sheet{
+    background:var(--paper);width:100%;max-width:520px;
+    border-radius:16px 16px 0 0;padding:20px 18px 28px;
+    max-height:88vh;overflow-y:auto;
+  }
+  .sheet h2{font-size:16px;margin:0 0 14px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:5px;}
+  .field select, .field input{
+    width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:8px;
+    font-size:14px;background:var(--paper-2);color:var(--ink);
+    font-family:inherit;
+  }
+  .field input[type=date]{font-family:"Courier New",monospace;}
+  .sheet-actions{display:flex;gap:10px;margin-top:18px;}
+  .btn{
+    flex:1;padding:12px;border-radius:8px;border:1px solid var(--line);
+    font-size:14px;font-weight:700;cursor:pointer;background:var(--paper-2);color:var(--ink);
+  }
+  .btn.primary{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .btn.danger-text{color:var(--danger);}
+
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--ink-soft);margin-bottom:14px;}
+  .legend span{display:flex;align-items:center;gap:5px;}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>図書館スリップ</h1>
+    <p>貸出期限と予約取置期限をまとめて管理</p>
+  </header>
+
+  <div class="legend">
+    <span><span class="dot" style="background:var(--takushoku)"></span>拓殖大学</span>
+    <span><span class="dot" style="background:var(--shibuya-lend)"></span>渋谷区(貸出)</span>
+    <span><span class="dot" style="background:var(--shibuya-res)"></span>渋谷区(予約)</span>
+  </div>
+
+  <div class="filters" id="filters"></div>
+  <div id="list"></div>
+</div>
+
+<button class="fab" id="addBtn"><i></i>＋ 期限を追加</button>
+
+<div class="overlay hidden" id="overlay">
+  <div class="sheet">
+    <h2 id="sheetTitle">期限を追加</h2>
+    <div class="field">
+      <label>図書館・種別</label>
+      <select id="fSrc">
+        <option value="takushoku">拓殖大学図書館（貸出）</option>
+        <option value="shibuya-lend">渋谷区立図書館（貸出）</option>
+        <option value="shibuya-res">渋谷区立図書館（予約取置）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>書名・資料名</label>
+      <input type="text" id="fTitle" placeholder="例: 経済学入門">
+    </div>
+    <div class="field">
+      <label id="fDateLabel">返却期限日</label>
+      <input type="date" id="fDate">
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" id="cancelBtn">キャンセル</button>
+      <button class="btn primary" id="saveBtn">保存</button>
+    </div>
+    <div class="sheet-actions" id="deleteRow" style="display:none;">
+      <button class="btn danger-text" id="deleteBtn" style="width:100%;">この項目を削除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SRC_LABEL = {
+  'takushoku':'拓殖大学図書館',
+  'shibuya-lend':'渋谷区立図書館',
+  'shibuya-res':'渋谷区立図書館'
+};
+const SRC_TYPE = {
+  'takushoku':'貸出期限',
+  'shibuya-lend':'貸出期限',
+  'shibuya-res':'取置期限'
+};
+const DATE_LABEL = {
+  'takushoku':'返却期限日',
+  'shibuya-lend':'返却期限日',
+  'shibuya-res':'受取期限日'
+};
+
+let items = [];
+let editingId = null;
+let activeFilter = 'all';
+
+const overlay = document.getElementById('overlay');
+const listEl = document.getElementById('list');
+const filtersEl = document.getElementById('filters');
+
+function daysUntil(dateStr){
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const target = new Date(dateStr + 'T00:00:00');
+  return Math.round((target - today) / 86400000);
+}
+
+function fmtDate(dateStr){
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${d.getMonth()+1}/${d.getDate()}(${'日月火水木金土'[d.getDay()]})`;
+}
+
+function urgencyClass(days){
+  if(days < 0) return 'over';
+  if(days <= 1) return 'danger';
+  if(days <= 3) return 'warn';
+  return 'ok';
+}
+
+function render(){
+  const filtered = activeFilter === 'all' ? items : items.filter(i => i.src === activeFilter);
+  const sorted = [...filtered].sort((a,b) => a.date.localeCompare(b.date));
+
+  filtersEl.innerHTML = '';
+  const chips = [
+    {key:'all', label:'すべて'},
+    {key:'takushoku', label:'拓殖大学'},
+    {key:'shibuya-lend', label:'渋谷区(貸出)'},
+    {key:'shibuya-res', label:'渋谷区(予約)'}
+  ];
+  chips.forEach(c => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-chip' + (activeFilter === c.key ? ' active' : '');
+    btn.textContent = c.label;
+    btn.onclick = () => { activeFilter = c.key; render(); };
+    filtersEl.appendChild(btn);
+  });
+
+  if(sorted.length === 0){
+    listEl.innerHTML = '<div class="empty">登録がありません。下のボタンから追加してください。</div>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  sorted.forEach(item => {
+    const days = daysUntil(item.date);
+    const uc = urgencyClass(days);
+    const dayLabel = days < 0 ? `${Math.abs(days)}日超過` : (days === 0 ? '本日' : `あと${days}日`);
+    const numText = days < 0 ? `+${Math.abs(days)}` : days;
+
+    const el = document.createElement('div');
+    el.className = 'slip src-' + item.src;
+    el.innerHTML = `
+      <div class="stamp ${uc}">
+        <div class="num">${numText}</div>
+        <div class="lab">${days < 0 ? '日超過' : '日'}</div>
+      </div>
+      <div class="slip-body">
+        <div class="slip-src">${SRC_LABEL[item.src]}</div>
+        <div class="slip-title">${escapeHtml(item.title || '（無題）')}</div>
+        <div class="slip-type">${SRC_TYPE[item.src]} ・ ${dayLabel}</div>
+        <div class="slip-date">${fmtDate(item.date)}</div>
+      </div>
+      <div class="slip-actions">
+        <button class="icon-btn" data-edit="${item.id}">✎</button>
+      </div>
+    `;
+    listEl.appendChild(el);
+  });
+
+  listEl.querySelectorAll('[data-edit]').forEach(btn => {
+    btn.onclick = () => openSheet(btn.getAttribute('data-edit'));
+  });
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function openSheet(id){
+  editingId = id || null;
+  const srcSel = document.getElementById('fSrc');
+  const titleInput = document.getElementById('fTitle');
+  const dateInput = document.getElementById('fDate');
+  const deleteRow = document.getElementById('deleteRow');
+  const sheetTitle = document.getElementById('sheetTitle');
+
+  if(id){
+    const item = items.find(i => i.id === id);
+    srcSel.value = item.src;
+    titleInput.value = item.title;
+    dateInput.value = item.date;
+    deleteRow.style.display = 'block';
+    sheetTitle.textContent = '期限を編集';
+  } else {
+    srcSel.value = 'takushoku';
+    titleInput.value = '';
+    dateInput.value = '';
+    deleteRow.style.display = 'none';
+    sheetTitle.textContent = '期限を追加';
+  }
+  updateDateLabel();
+  overlay.classList.remove('hidden');
+}
+
+function updateDateLabel(){
+  document.getElementById('fDateLabel').textContent = DATE_LABEL[document.getElementById('fSrc').value];
+}
+
+function closeSheet(){
+  overlay.classList.add('hidden');
+  editingId = null;
+}
+
+async function loadItems(){
+  try{
+    const res = await window.storage.get('library-items');
+    items = res ? JSON.parse(res.value) : [];
+  }catch(e){
+    items = [];
+  }
+  render();
+}
+
+async function saveItems(){
+  try{
+    await window.storage.set('library-items', JSON.stringify(items));
+  }catch(e){
+    console.error('保存に失敗しました', e);
+  }
+}
+
+document.getElementById('addBtn').onclick = () => openSheet(null);
+document.getElementById('cancelBtn').onclick = closeSheet;
+document.getElementById('fSrc').onchange = updateDateLabel;
+
+document.getElementById('saveBtn').onclick = async () => {
+  const src = document.getElementById('fSrc').value;
+  const title = document.getElementById('fTitle').value.trim();
+  const date = document.getElementById('fDate').value;
+  if(!date){
+    alert('日付を入力してください。');
+    return;
+  }
+  if(editingId){
+    const item = items.find(i => i.id === editingId);
+    item.src = src; item.title = title; item.date = date;
+  } else {
+    items.push({id: Date.now().toString(), src, title, date});
+  }
+  await saveItems();
+  closeSheet();
+  render();
+};
+
+document.getElementById('deleteBtn').onclick = async () => {
+  items = items.filter(i => i.id !== editingId);
+  await saveItems();
+  closeSheet();
+  render();
+};
+
+overlay.onclick = (e) => { if(e.target === overlay) closeSheet(); };
+
+loadItems();
+</script>
+</body>
+</html>
