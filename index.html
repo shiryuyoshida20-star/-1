@@ -143,10 +143,20 @@
   .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--ink-soft);margin-bottom:14px;}
   .legend span{display:flex;align-items:center;gap:5px;}
   .dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+
+  .toast{
+    position:fixed;top:14px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:var(--paper);font-size:13px;
+    padding:10px 16px;border-radius:8px;z-index:100;max-width:90%;
+    box-shadow:0 4px 14px rgba(0,0,0,.25);
+  }
+  .toast.error{background:var(--danger);}
+  .toast.hidden{display:none;}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <div class="toast hidden" id="toast"></div>
   <header>
     <h1>図書館スリップ</h1>
     <p>貸出期限と予約取置期限をまとめて管理</p>
@@ -334,11 +344,25 @@ function closeSheet(){
   editingId = null;
 }
 
+// ↓ あなたのFirebase Realtime DatabaseのURL
+const FIREBASE_DB_URL = 'https://my-first-311cb-default-rtdb.firebaseio.com';
+
+function showToast(msg, isError){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (isError ? ' error' : '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.classList.add('hidden'); }, isError ? 5000 : 1800);
+}
+
 async function loadItems(){
   try{
-    const res = await window.storage.get('library-items');
-    items = res ? JSON.parse(res.value) : [];
+    const res = await fetch(`${FIREBASE_DB_URL}/library-items.json`);
+    if(!res.ok) throw new Error('読み込み失敗 (' + res.status + ')');
+    const data = await res.json();
+    items = data || [];
   }catch(e){
+    showToast('読み込みエラー: ' + (e && e.message ? e.message : '不明なエラー'), true);
     items = [];
   }
   render();
@@ -346,9 +370,17 @@ async function loadItems(){
 
 async function saveItems(){
   try{
-    await window.storage.set('library-items', JSON.stringify(items));
+    const res = await fetch(`${FIREBASE_DB_URL}/library-items.json`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(items)
+    });
+    if(!res.ok) throw new Error('保存失敗 (' + res.status + ')');
+    showToast('保存しました');
+    return true;
   }catch(e){
-    console.error('保存に失敗しました', e);
+    showToast('保存エラー: ' + (e && e.message ? e.message : '不明なエラー'), true);
+    return false;
   }
 }
 
@@ -370,14 +402,17 @@ document.getElementById('saveBtn').onclick = async () => {
   } else {
     items.push({id: Date.now().toString(), src, title, date});
   }
-  await saveItems();
+  const ok = await saveItems();
+  if(!ok) return;
   closeSheet();
   render();
 };
 
 document.getElementById('deleteBtn').onclick = async () => {
+  const backup = items;
   items = items.filter(i => i.id !== editingId);
-  await saveItems();
+  const ok = await saveItems();
+  if(!ok){ items = backup; return; }
   closeSheet();
   render();
 };
